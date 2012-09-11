@@ -4,10 +4,8 @@
 ;; (:require [simpledb.core :as db])
 
 (ns noir-auth-app.models
-  (:require [noir-auth-app.models.user :as user])
-  (:use somnium.congomongo)
-  (:use somnium.congomongo.coerce)
-  (:use [somnium.congomongo.config :only [*mongo-config*]]))
+  (:require [noir-auth-app.models.user :as user]
+            [monger.core :as mg]))
 
 ; Fixes
 ;   can't serialize class org.joda.time.DateTime -
@@ -44,15 +42,6 @@
 ; In order to get these DateTimes displayed in UTC by default, the UTC time
 ; zone is now specified when creating them.
 ;   http://joda-time.sourceforge.net/userguide.html#TimeZones
-(extend-protocol ConvertibleFromMongo
-  java.util.Date
-  (mongo->clojure [^java.util.Date d keywordize]
-      ;(new org.joda.time.DateTime d)))
-      (new org.joda.time.DateTime d (org.joda.time.DateTimeZone/forID "UTC"))))
-;
-(extend-protocol ConvertibleToMongo
-  org.joda.time.DateTime
-  (clojure->mongo [^org.joda.time.DateTime dt] (.toDate dt)))
 
 
 ;; http://thecomputersarewinning.com/post/clojure-heroku-noir-mongo
@@ -60,8 +49,8 @@
   "Checks if connection and collection exist, otherwise initialize."
   []
   ; If global connection doesn't exist yet
-  ; https://github.com/aboekhoff/congomongo/blob/master/src/somnium/congomongo.clj
-  (when-not (connection? *mongo-config*)
+                                        ; https://github.com/aboekhoff/congomongo/blob/master/src/somnium/congomongo.clj
+  (when-not (bound? (var mg/*mongodb-connection*))
     ; Reads the environment variable containing the MongoDB connection URI.
     ; In Heroku this is set using
     ;   heroku config:add MONGODB_URI=mongodb://username:password@example.com/dbname
@@ -79,12 +68,16 @@
       ; *mongo-config*.
       ;   http://clojuredocs.org/clojure_core/clojure.core/thread-bound_q
       ;   http://clojuredocs.org/clojure_core/clojure.core/alter-var-root
-
-      (set-connection! (make-connection mongo-url))
+      (println mongo-url)
+      (mg/connect-via-uri! mongo-url)
 
       ; https://github.com/aboekhoff/congomongo/blob/master/src/somnium/congomongo.clj
       ; http://api.mongodb.org/java/2.7.3/com/mongodb/WriteConcern.html
-      (set-write-concern *mongo-config* :safe)
 
+      
+;     (mg/set-default-write-concern! WriteConcern/FSYNC_SAFE)
+      ;Monger already set the writeconcern to save, in order to change
+      ;it we need to (:import com.mongodb.WriteConcern)
+      
       (user/maybe-init))))
 

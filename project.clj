@@ -41,5 +41,6 @@
                            [clj-time "0.4.2"]
                            [jayq "0.1.0-alpha4"]
                            [fetch "0.1.0-alpha2"]
-                           [com.novemberain/monger "1.1.2"]]
+                           [com.novemberain/monger "1.1.2"]
+                           [org.clojure/data.json "0.1.2"]]
             :main noir-auth-app.server)

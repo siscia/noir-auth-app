@@ -14,13 +14,13 @@
   (:refer-clojure :exclude [find])
   
   (:require [clojure.string :as string]
-            [somnium.congomongo :as db]
             [clj-time.core :as time]
             [noir.util.crypt :as crypt]
             [noir.validation :as vali]
             [monger.collection :as mc])
 
-  (:use monger.operators)
+  (:use [monger.operators]
+        [monger.joda-time])
 
   (:import java.security.SecureRandom)
   (:import [org.bson.types ObjectId]))
@@ -62,7 +62,7 @@
   If they don't exist yet, it creates the appropriate indexes."
   []
   (or (mc/exists? "users") 
-      (mc/create "users"))
+      (mc/create "users" nil))
 
   ; MongoDB creates the _id index by default on all collections. It is a
   ; unique index even though the getIndexes() method will not print unique:
@@ -71,14 +71,14 @@
 
   ; http://docs.mongodb.org/manual/core/indexes/#unique-index
                                         ; https://github.com/aboekhoff/congomongo/issues/82
-  (mc/ensure-idex "users" {"lowercase_username" 1
+  (mc/ensure-index "users" {"lowercase_username" 1
                            "email" 1}
                   {:unique true})
-  (mc/ensure-idex "users" {"created_at" 1})
+  (mc/ensure-index "users" {"created_at" 1})
 
   ; http://docs.mongodb.org/manual/core/indexes/#sparse-index
                                         ; http://stackoverflow.com/questions/8608567/sparse-indexes-and-null-values-in-mongo
-  (mc/ensure-idex "users" {"activaction_code" 1
+  (mc/ensure-index "users" {"activaction_code" 1
                            "password_reset_code" 1}
                   {:unique true :sparse true}))
 
@@ -86,17 +86,9 @@
 ;; Querying the database
 
 (defn find [query]
-  ; Congomongo's fetch uses keyword parameters, so the way to call fetch is...
-  ;     (fetch :users :limit limit)
-  ; instead of...
-  ;     (fetch :users {:limit limit})
-  ;   https://github.com/aboekhoff/congomongo/blob/master/src/somnium/congomongo.clj#L264
   ; More about keyword params in Clojure at
   ;   http://stackoverflow.com/questions/717963/clojure-keyword-arguments
-  (mc/find-maps "users" query)
-
-; sort and limit TODO 
-  (mc/find-maps "users" {where}))
+  (mc/find-maps "users" query))
 
 (defn find-by-id [id]  
   (mc/find-map-by-id "users" id))
@@ -147,8 +139,9 @@
         ; http://stackoverflow.com/questions/1527548/why-does-clojure-have-keywords-in-addition-to-symbols
         attr-value (attr-name record)]
     (vali/rule (not (mc/any?
-                     collection-name (merge {attr-name attr-value}
-                                            (when _id {:_id { $ne _id}}))))
+                     collection-name 
+                     (merge {attr-name attr-value}
+                            (when _id {:_id {$ne _id}}))))
                [attr-name message])))
 
 
@@ -272,7 +265,6 @@
 
 ; http://items.sjbach.com/567/critiquing-clojure#2
 (declare set-activation-code hexadecimalize generate-secure-token)
-;          find-by-email)
 
 
 (defn prepare-for-save
@@ -351,8 +343,9 @@
               ; timestamp.)
               ; Same for :updated_at .
               (let [now (time/now)]
-                ; insert! returns the inserted object, with the :_id set
-                (mc/insert "users" 
+                ; insert-and-return returns the inserted object, it is
+                ; suggested to manually add the :_id http://clojuremongodb.info/articles/inserting.html
+                (mc/insert-and-return "users" 
                            (merge (prepare-for-save user)
                                   {:_id (ObjectId.)}
                                    (when-not (contains? user :created_at)
@@ -414,7 +407,6 @@
         unset-map (select-keys attributes (for [[k v] attributes
                                                 :when (= v :$unset)]
                                                k))
-        ;
         old-user-without-deleted-fields
             (apply dissoc old-user (keys unset-map))
         attributes-without-deleted-ones
@@ -431,10 +423,8 @@
         ;                                k))
 
     (when (or skip-validations (valid? updated-user))
-          ; CongoMongo's update! returns a WriteResult object from the
+          ; Monger's update! returns a WriteResult object from the
           ; underlying Java driver
-          ; https://github.com/aboekhoff/congomongo/blob/master/src/somnium/congomongo.clj
-          ; https://github.com/mongodb/mongo-java-driver/blob/master/src/main/com/mongodb/DBCollection.java
           ;
           ; Notice that if "write concern" were not set to :safe (see
           ; models.clj), MongoDB Java driver would never raise any exception.
@@ -474,9 +464,9 @@
                     ; object. To modify only some fields, the $ modifiers have
                     ; to be used.
                     (mc/update-by-id "users" user-id
-                                {$set (assoc prepared-user
-                                              :updated_at updated-at)
-                                 $unset unset-map})
+                                     {$set (assoc prepared-user
+                                             :updated_at updated-at)
+                                      $unset unset-map})
                     (find-by-id user-id)
                     (catch Exception e
                       (println e)
@@ -513,9 +503,9 @@
   ; CongoMongo provides a fetch-and-modify function that wraps MongoDB's
   ; findAndModify command, but I don't see the value of it, and I prefer to
   ; use the generic command function.
-  (let [user-id (ObjectId (str user-id))]
+  (let [user-id (ObjectId. (str user-id))]
     (mc/remove-by-id "users" user-id)))
-;; I DON'T LIKE THET OLD ONE... ObjectId I need to be sure that the ID
+;; I DON'T LIKE THE OLD ONE... I need to be sure that the ID
 ;; really exist, if it does what else could go wrong ? I need to
 ;; assume tha mongo will do its job.
 
@@ -557,8 +547,6 @@
   ; http://stackoverflow.com/a/6128878/974795
   ; https://github.com/plataformatec/devise/blob/master/lib/generators/active_record/templates/migration.rb
   ;
-  ; It takes ~1.26 ms in my MBP (2.26 GHz Intel Core 2 Duo)
-  ; ~1.27 ms in Heroku
   [user]
   (merge user
          {:activation_code (hexadecimalize (generate-secure-token 20))
@@ -573,7 +561,7 @@
   [email]
   (if-let [user (find-by-email email)]
     (if (:activation_code user)
-        (update! (:_id user) (set-activation-code user))
+      (update! (:_id user) (set-activation-code user))
         ; set-error returns nil
         ; https://github.com/ibdknox/noir/blob/master/src/noir/validation.clj
         (vali/set-error :activation_code 
@@ -706,11 +694,11 @@
     ; additional validation code, this is handled like if it were the real,
     ; current email.
     (when (valid? (merge user {:email new-email}))
-          (update! user-id
-                   {:new_requested_email new-email
-                    :email_change_code (hexadecimalize
-                                              (generate-secure-token 20))}
-                   {:skip-validations true}))))
+      (update! user-id
+               {:new_requested_email new-email
+                :email_change_code (hexadecimalize
+                                    (generate-secure-token 20))}
+               {:skip-validations true}))))
 
 ;
 (defn cancel-email-change! [user-id]
