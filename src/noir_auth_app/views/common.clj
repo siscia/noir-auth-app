@@ -118,7 +118,8 @@
 ; and added to ApplicationController in
 ;   https://github.com/thoughtbot/clearance/blob/master/lib/generators/clearance/install/install_generator.rb
 (defn current-user []
-  (users/find-by-id (session/get :user-id)))
+  (if-let [user-id (session/get :user-id)]
+    (users/find-by-id user-id)))
 
 
 ; middle truncation (similar to iOS UILineBreakModeMiddleTruncation)

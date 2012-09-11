@@ -1,5 +1,7 @@
 # noir-auth-app
 
+This is a porting of the project, which used CongoMongo in order to make it work using Monger, original project by Xavi Caballè, porting by Simone Mosciatti (2012)
+
 A complete authentication web app based on Clojure/ClojureScript, Noir and MongoDB.
 
 It's meant to be used as a base app for building Clojure web apps that require authentication.
@@ -16,7 +18,7 @@ It features...
 
 See the [URL Tour](#url-tour) for a more detailed look at the functionality.
 
-Besides [Noir](http://webnoir.org/), noir-auth-app also uses [CongoMongo](https://github.com/aboekhoff/congomongo) to interact with the database and [Postal](https://github.com/drewr/postal) to send emails.
+Besides [Noir](http://webnoir.org/), noir-auth-app also uses [Monger](http://clojuremongodb.info/) to interact with the database and [Postal](https://github.com/drewr/postal) to send emails.
 
 You can see the app running at http://noir-auth-app.herokuapp.com (in this demo all users are given admin privileges, so that you can see the admin UI, but account deletions from this UI are disabled).
 
@@ -226,6 +228,8 @@ foreman start
 ## License
 
 Copyright (C) 2012 Xavi Caballé
+
+Porting to Monger by Simone Mosciatti
 
 Distributed under the Eclipse Public License, the same as Clojure.
 
